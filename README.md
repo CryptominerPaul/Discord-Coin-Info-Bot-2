@@ -169,6 +169,33 @@ Important note if you customize the requests:
     "interval": 60                   // refresh the data every 60 seconds
 }
 ```
+- **channel_monitor**: Use some locked voice channels where the users doesn't have connect permisions and the bot have edit persmisions to post every X time a custom set of stats. It follows this scheme:
+```
+"channel_monitor": {
+    "enabled": true,
+    "interval": 60,                      // refresh the data every 60 seconds
+    "data": [
+            {
+				"channel": "671084902195658762", // channel id where the bot will change it's name for info
+				"type": "ticker",                // info type, it can be either: ticker, blockcount or mncount
+				"exchange": "Crex24"             // exchange name, only for "ticker" type
+			},
+			{
+				"channel": "671085710974910570",
+				"type": "ticker",
+				"exchange": "Graviex"
+			},
+			{
+				"channel": "671085807582576650",
+				"type": "blockcount"
+			},
+			{
+				"channel": "671085828436656128",
+				"type": "mncount"
+			}
+    ]
+}
+```
 - **hidenotsupported**: Hide the ticker values from exchanges APIs that doesn't support that feature instead of showing "Not Supported".
 - **useraddrs:** Enable the user address commands (`!my-address-add`, `!my-address-del`, `!my-address-list`, `!my-balance`).
 - **usermns:** Enable the user masternode commands (`!my-masternode-add`, `!my-masternode-del`, `!my-masternode-list`, `!my-balance`).

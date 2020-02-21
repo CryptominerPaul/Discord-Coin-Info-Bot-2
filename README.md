@@ -1,5 +1,5 @@
 # Discord-Coin-Info-Bot-2
-Info-Bot that post Exchange Pricing POW,POS, &amp; MN Tier-lvl-3
+Coin-Info-Bot that post Exchange Pricing POW,POS, &amp; MN Tier-lvl-3 Stats, and Expected Earnings
 
 - A discord bot made for ZelCash, Supports 3 Tier Masternode, it can be easily adapted for any other currency.
 

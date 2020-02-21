@@ -1034,6 +1034,11 @@ class BotCommand {
                             embed.addField("POS Reward", stage.pos + " " + conf.coin, true);
                         break;
                     }
+                    case "devfee": {
+                        if (stage.devfee !== undefined && valid.blockcount)
+                            embed.addField("DEV Fee", stage.devfee + " " + conf.coin, true);
+                        break;
+                    }
                     case "locked": {
                         if (valid.blockcount && valid.mncount3 && valid.supply)
                             embed.addField("Locked", (mncount3 * stage.coll).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin + " (" + (mncount3 * stage.coll / supply * 100).toFixed(2) + "%)", true);

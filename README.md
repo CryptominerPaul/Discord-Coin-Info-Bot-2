@@ -50,11 +50,11 @@ screen -r to resume the detached screen
 - **%stats:** Shows the block count, MN count, supply, collateral, MN reward, POS reward, Locked coins and agerage MN reward frecuency.
 - **%stages:** Shows the upcoming reward structure changes.
 - **%earnings ```[amount_on_mns]```:** Shows the ROI (in percentage and days), the MN price, the daily/weekly/monthly/yearly earnings for your cryptocurrency and optionally you can input the amount of mns to calculate the earnings.
-- **%earningsbasic [amount of MNs] : get the expected earnings per masternode Basic
-- **%earningssuper [amount of MNs] : get the expected earnings per masternode Super
-- **%earningsbamf [amount of MNs] : get the expected earnings per masternode Bamf
+- **%earningsbasic ```[amount of MNs]```:** get the expected earnings per masternode Basic
+- **%earningssuper ```[amount of MNs]```:** get the expected earnings per masternode Super
+- **%earningsbamf ```[amount of MNs]```:** get the expected earnings per masternode Bamf
 - **%mining ```<number>``` ```[K/M/G/T]```:** Shows the expected earnings with the given hashrate, optionally you can use K,M,G or T to indicate the multiplier, example: ```!mining 500``` => asks for 500 H/s, ```!mining 20 M``` => asks for 20 MH/s, etc.
-- **%addnodes : get a addnodes list for the chain sync
+- **%addnodes:** : get a addnodes list for the chain sync
 
 - **%balance ```<address>```:** Shows the sent, received and current balance of the given address.
 - **%block-index ```<number>```:** Shows the block stats of the given block number.

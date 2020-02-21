@@ -1,0 +1,126 @@
+{{
+  "special_ticker": {
+
+  },
+  "ticker": [
+    ["Graviex", "ZEL", "BTC"],
+    ["Stex", "ZEL", "BTC"],
+    ["Stex", "ZEL", "ETH"],
+    ["TradeOgre", "ZEL", "BTC"],
+    ["Tokok", "ZEL", "BTC"],
+    ["Tokok", "ZEL", "ETH"],
+    ["SafeTrade", "ZEL", "BTC"],
+    ["SafeTrade", "ZEL", "SAFE"]
+  ],
+  "color": {
+    "prices": 3447003,
+    "coininfo": 888688,
+    "basic" : 12758363,
+    "super1" : 14348789,
+    "bamf" : 16112128,
+    "explorer": 888688,
+    "other": 15662976,
+    "error": 9375030
+  },
+  "devs": [
+    "412476381725720576"
+  ],
+  "stages": [
+    {
+      "block": 657000,
+      "coll": 100000,
+      "mn": 22.50,
+      "pow": 112.50
+    },
+    {
+      "block": 1642500,
+      "coll": 100000,
+      "mn":11.25 ,
+      "pow": 56.25
+    },
+    {
+      "block": 4106250,
+      "coll": 100000,
+      "mn": 5.625,
+      "pow": 28.125
+    },
+    {
+      "block": 10265625,
+      "coll": 100000,
+      "mn": 2.8125,
+      "pow": 14.0625
+    }
+    
+  ],
+
+  "stages1": [
+    {
+      "block": 657000,
+      "coll": 10000,
+      "mn": 5.625,
+      "pow": 112.5 
+    }
+    
+  ],
+ 
+  "stages2": [
+    {
+      "block": 657000,
+      "coll": 25000,
+      "mn": 9.375,
+      "pow": 112.5
+    }
+
+  ],
+
+  "stages3": [
+    {
+      "block": 657000,
+      "coll": 100000,
+      "mn": 22.5,
+      "pow": 112.5
+    }
+
+  ],
+
+  "requests": {
+    "blockcount": "zelcash-cli getblockcount",
+    "mncount": "zelcash-cli getzelnodecount | jq  .total",
+    "mncount1": "zelcash-cli getzelnodecount | jq .",
+    "mncount2": "zelcash-cli getzelnodecount | jq .",
+    "mncount3": "zelcash-cli getzelnodecount | jq .",
+    "supply": "curl -s  https://explorer.zel.cash/api/circulation | jq .circulationsupply",
+    "balance": "curl -k https://explorer.zel.cash/api/addr/",
+    "blockindex": "zelcash-cli getblockhash ",
+    "blockhash": "zelcash-cli getblock ",
+    "hashrate": "zelcash-cli getnetworkhashps",
+    "mnstat": "zelcash-cli listzelnodes  ",
+    "addnodes": "zelcash-cli getpeerlist"
+  },
+  "statorder": [
+    "blockcount",
+    "mncount",
+    "supply",
+    "collateral",
+    "mnreward",
+    "powreward",
+    "devfee",
+    "locked",
+    "avgmnreward",
+    "nextstage"
+  ],
+  "monitor": {
+    "enabled": true,
+    "channel": "642595194327400498",
+    "interval": 600
+  },
+  "hidenotsupported": false,
+  "useraddrs": true,
+  "usermns": true,
+  "sourcecode": "https://github.com/CryptominerPaul/",
+  "channel": [ "503796710867206144", "566329958478118912"],
+  "prefix": "%",
+  "coin": "ZEL",
+  "blocktime": 120,
+  "token": "YOU_WILL_NEED_YOUR_OWN_TOKEN_"
+}

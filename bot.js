@@ -1,14 +1,9 @@
-
 /*
-    Author: neo3587
+    Original Author: neo3587
     Source: https://github.com/neo3587/discord_cryptobot
+    Modified By: Cryptominer#8245
+    Modified Source: https://github.com/CryptominerPaul/ 
     TODO:
-        - tradesatoshi ticker => https://tradesatoshi.com/api/public/getmarketsummary?market=LTC_BTC
-        - coinbene ticker => https://github.com/Coinbene/API-Documents/wiki/1.1.0-Get-Ticker-%5BMarket%5D
-        - !addnodes ?
-        - !my-masternode-list -> click => info... is it even possible?, if not => field message (status, protocol, last seen, last payed, active time)
-        - !my-address-del all, !my-masternode-del all
-        - share api calls on monitor to decrease the network usage
         - check if bulkdelete fails cause 2 weeks old messages => delete all them 1 by 1
 */
 
@@ -65,13 +60,12 @@ class ExchangeData {
         if (price === undefined && volume === undefined && buy === undefined && sell === undefined && change === undefined)
             return;
         this.price  = isNaN(price)  ? undefined : parseFloat(price).toFixed(8);
-        this.volume = isNaN(volume) ? undefined : parseFloat(volume).toFixed(8);
+        this.volume = isNaN(volume) ? undefined : parseFloat(volume).toFixed(4);
         this.buy    = isNaN(buy)    ? undefined : parseFloat(buy).toFixed(8);
         this.sell   = isNaN(sell)   ? undefined : parseFloat(sell).toFixed(8);
         this.change = isNaN(change) ? undefined : (change >= 0.0 ? "+" : "") + parseFloat(change).toFixed(2) + "%";
     }
 }
-
 
 function start_monitor() {
     if (conf.monitor !== undefined && conf.monitor.enabled === true) {
@@ -83,8 +77,10 @@ function start_monitor() {
         const refresh_monitor = async () => {
             embeds = [];
             await cmd.price();
-            await cmd.stats();
-            await cmd.earnings();
+            await cmd.stats1();
+            await cmd.stats2();
+            await cmd.stats3();  
+            await cmd.earnings(1 , 1 , 1);
             channel.bulkDelete(50).then(async () => {
                 for (let emb of embeds)
                     await channel.send(emb);
@@ -95,6 +91,7 @@ function start_monitor() {
         channel.client.setInterval(() => refresh_monitor(), conf.monitor.interval * 1000);
     }
 }
+
 function configure_systemd(name) {
     if (process.platform === "linux") {
         let service = "[Unit]\n" +
@@ -129,6 +126,7 @@ function configure_systemd(name) {
     }
     process.exit();
 }
+
 function get_ticker(ticker) {
     return new Promise((resolve, reject) => {
 
@@ -166,57 +164,107 @@ function get_ticker(ticker) {
         }
 
         switch (exchange.toLowerCase()) {
-            case "cryptobridge": {
-                exdata.link = `https://wallet.crypto-bridge.org/market/BRIDGE.${coin_up[0]}_BRIDGE.${coin_up[1]}`;
-                js_request(`https://api.crypto-bridge.org/api/v1/ticker/${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res, "last", "volume", "bid", "ask", "percentChange"));
-                break;
-            }
-            case "crex24": {
+           case "crex24": {
                 exdata.link = `https://crex24.com/exchange/${coin_up[0]}-${coin_up[1]}`;
-                js_request(`https://api.crex24.com/v2/public/tickers?instrument=${coin_up[0]}-${coin_up[1]}`, res => exdata.fillj(res[0], "last", "volumeInBtc", "bid", "ask", "percentChange"));
-                break;
-            }
-            case "coinexchange": {
-                exdata.link = `https://www.coinexchange.io/market/${coin_up[0]}/${coin_up[1]}`;
-                js_request(`https://www.coinexchange.io/api/v1/getmarketsummary?market_id=` + conf.special_ticker.CoinExchange, res => exdata.fillj(res["result"], "LastPrice", "BTCVolume", "BidPrice", "AskPrice", "Change"));
+                js_request(`https://api.crex24.com/v2/public/tickers?instrument=${coin_up[0]}-${coin_up[1]}`, res => exdata.fillj(res[0], "last", "baseVolume", "ask", "bid", "percentChange"));
                 break;
             }
             case "graviex": {
-                exdata.link = `https://graviex.net/markets/${coin_lw[0]}${coin_lw[1]}`;
-                js_request(`https://graviex.net:443/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}.json`, res => exdata.fillj(res["ticker"], "last", "volbtc", "buy", "sell", "change"));
-                break;
-            }
-            case "escodex": {
-                exdata.link = `https://wallet.escodex.com/market/ESCODEX.${coin_up[0]}_ESCODEX.${coin_up[1]}`;
-                js_request(`http://labs.escodex.com/api/ticker`, res => exdata.fillj(res.find(x => x.base === coin_up[1] && x.quote === coin_up[0]), "latest", "base_volume", "highest_bid", "lowest_ask", "percent_change"));
-                break;
-            }
-            case "cryptopia": {
-                exdata.link = `https://www.cryptopia.co.nz/Exchange/?market=${coin_up[0]}_${coin_up[1]}`;
-                js_request(`https://www.cryptopia.co.nz/api/GetMarket/${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res["Data"], "LastPrice", "BaseVolume", "AskPrice", "BidPrice", "Change"));
-                break;
+                 exdata.link = `https://graviex.net/markets/${coin_lw[0]}${coin_lw[1]}`;
+                 js_request(`https://graviex.net:443/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}.json`, res => {
+                         res = res.ticker;
+                         exdata.fill(res.last, res.vol, res.sell, res.buy, res.change * 100);
+                 });
+                 break;
             }
             case "stex": {
-                exdata.link = `https://app.stex.com/en/trade/pair/${coin_up[1]}/${coin_up[0]}`;
-                js_request(`https://app.stex.com/api2/ticker`, res => {
-                    tmp = res.find(x => x.market_name === `${coin_up[0]}_${coin_up[1]}`);
-                    exdata.fill(tmp["last"], (parseFloat(tmp["last"]) + parseFloat(tmp["lastDayAgo"])) / 2 * tmp["vol"], tmp["ask"], tmp["bid"], tmp["lastDayAgo"] !== 0 ? (tmp["last"] / tmp["lastDayAgo"] - 1) * 100 : 0); // volume and change not 100% accurate
+                 exdata.link = `https://app.stex.com/en/trade/pair/${coin_up[1]}/${coin_up[0]}`;
+                 js_request(`https://api3.stex.com/public/ticker/`, res => {
+                         tmp = res["data"].find(x => x.symbol === `${coin_up[0]}_${coin_up[1]}`);
+                         exdata.fill(tmp["last"], tmp["volumeQuote"], tmp["ask"], tmp["bid"], '');
+                  });
+                  break;
+            }
+            case "cratex": {
+                exdata.link = `https://cratex.io/index.php?pair=${coin_up[0]}/${coin_up[1]}`;
+                js_request(`https://cratex.io/api/v1/get_markets_json.php?market=${coin_up[0]}/${coin_up[1]}`, res => exdata.fillj(res, "latest_price" ,"volume24h", "buy_price" , "sell_price" , "" ));
+                break;
+            }
+            case "zeonexchange": {
+                exdata.link = `https://exchange.zeonhexalgo.fun/market/53`;
+                js_request(`https://exchange.zeonhexalgo.fun/page/api?method=singlemarket&marketid=53`, res => exdata.fillj(res["return"][0], "lasttradeprice", "volume24h", "sell", "buy", "0"));
+                break;
+            }
+            case "tradebtc": {
+                exdata.link = `https://tradebtc.zeonhexalgo.fun/market/BTC-ZEON`;
+                js_request(`https://tradebtc.zeonhexalgo.fun/api/v1/public/getmarketsummary?market=${coin_up[0]}-${coin_up[1]}`, res => exdata.fillj(res["result"], "Last", "Volume", "Ask", "Bid", ""));
+                break;
+            }
+            case "moondex": {
+                exdata.link = `https://dex.moondex.org/market/${coin_up[1]}-${coin_up[0]}`;
+                js_request(`https://dex.moondex.org/api/v1/public/getmarketsummary?market=${coin_up[1]}-${coin_up[0]}`, res => exdata.fillj(res["result"], "Last", "Volume", "Ask", "Bid", ""));
+                break;
+            }
+            case "delion": {
+                exdata.link = `https://dex.delion.online/market/DELION.${coin_up[0]}_DELION.${coin_up[1]}`;
+                js_request(`https://api.delion.online/public/v1/tickers/${coin_up[0]}_${coin_up[1]}`, res => {
+                        res = res[`${coin_up[0]}_${coin_up[1]}`];
+                        exdata.fill(res.latest, res.base_volume, res.lowest_ask, res.highest_bid, res.percent_change * 100);
                 });
                 break;
             }
-            case "c-cex": {
-                exdata.link = `https://c-cex.com/?p=${coin_lw[0]}-{coin_lw[1]}`;
-                Promise.all([
-                    async_request(`https://c-cex.com/t/${coin_lw[0]}-${coin_lw[1]}.json`).catch(() => { }),
-                    async_request(`https://c-cex.com/t/volume_${coin_lw[1]}.json`).catch(() => { })
-                ]).then(([ticker, volume]) => {
-                    try {
-                        exdata.fillj(JSON.parse(ticker)["ticker"], "lastprice", "", "buy", "sell", "");
-                        exdata.volume = ternary_try(() => parseFloat(JSON.parse(volume)["ticker"][coin_lw[0]]["vol"]).toFixed(8), "Error");
-                    }
-                    catch (e) { /**/ }
-                    resolve(exdata);
+            case "citex": {
+                exdata.link = `https://www.citex.co.kr/#/trade/${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://api.citex.co.kr/v1/markets/common/ticker`, res => {
+                    tmp = res.find(x => x.symbol === `${coin_up[0]}_${coin_up[1]}`);
+                    exdata.fill(tmp["lastPrice"], tmp["volume"]*tmp["lastPrice"], null, null, tmp["ratio"]*100);
                 });
+                break;
+            }
+            case "birake": {
+                exdata.link = `https://trade.birake.com/market/BIRAKE.${coin_up[0]}_BIRAKE.${coin_up[1]}`;
+                js_request(`https://api.birake.com/public/v3/ticker`, res => {
+                        tmp = res.find(x => x.tradingPairs  === `${coin_up[0]}_${coin_up[1]}`);
+                        exdata.fill(tmp.lastPrice, tmp.quoteVolume24h, tmp.lowestAsk, tmp.highestBid, tmp.baseVolume24h * 100);
+                });
+                break;
+            }
+            case "unnamedexchange": {
+                exdata.link = `https://www.unnamed.exchange/Exchange/Basic?market=${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://api.unnamed.exchange/v1/Public/Ticker?market=${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res, "close", "volume", "lowestSell", "highestBuy", "change"));
+                break;
+            }
+            case "nlexchange": {
+                exdata.link = `https://www.nlexch.com/markets/${coin_lw[0]}${coin_lw[1]}`;
+                js_request(`https://www.nlexch.com/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}`, res => exdata.fillj(res["ticker"], "last", "vol", "sell", "buy", "change"));
+                break;
+            }
+            case "swiftex": {
+                exdata.link = `https://www.swiftex.co/trading/${coin_lw[0]}${coin_lw[1]}`;
+                js_request(`https://www.swiftex.co/api/v2/peatio/public/markets/${coin_lw[0]}${coin_lw[1]}/tickers`, res => exdata.fillj(res["ticker"], "last", "volume", "sell", "buy", "price_change_percent"));
+                break;
+            }
+            case "ihostmn_buy&sell": {
+                exdata.link = `https://ihostmn.com/buysell.php?market=${coin_up[1]}${coin_up[0]}`;
+                js_request(`https://ihostmn.com/api/v1/buysell/public/get_market_info?market=${coin_up[1]}${coin_up[0]}`, res => {
+                        tmp = res["result"]["market"];
+                        exdata.fill(tmp["last_price"], tmp["24h_volume"], tmp["sell"], tmp["buy"], '');
+                });
+                break;
+            }
+            case "tradecx": {
+                exdata.link = `https://tradecx.io/markets/${coin_lw[0]}${coin_lw[1]}`;
+                js_request(`https://tradecx.io/api/tickers/${coin_lw[0]}${coin_lw[1]}`, res => exdata.fillj(res["ticker"], "last", "vol", "sell", "buy", "change"));
+                break;
+            }
+            case "nortexchange": {
+                exdata.link = `https://nortexchange.com/exchange/?market=${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://nortexchange.com/exchange/api?method=singlemarket=${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res["market"], "last", "vol", "sell", "buy", "change"));
+                break;
+            }
+            case "tradeogre": {
+                exdata.link = `https://tradeogre.com/exchange/${coin_up[1]}-${coin_up[0]}`;
+                js_request(`https://tradeogre.com/api/v1/ticker/${coin_up[1]}-${coin_up[0]}`, res => exdata.fillj(res,"price" ,"volume", "ask" , "bid" , "" ));  //  change not supported
                 break;
             }
             case "hitbtc": {
@@ -242,29 +290,14 @@ function get_ticker(ticker) {
                 js_request(`https://www.southxchange.com/api/price/${coin_up[0]}/${coin_up[1]}`, res => exdata.fillj(res, "Last", "Volume24Hr", "Bid", "Ask", "Variation24Hr"));
                 break;
             }
-            case "wadax": {
-                exdata.link = `https://wadax.io/trade/${coin_up[0]}${coin_up[1]}`;
-                js_request(`https://wadax.io/v2/tickers/${coin_up[0]}${coin_up[1]}`, res => exdata.fillj(res, "last", "baseVolume", "buy", "sell", "change"));
-                break;
-            }
-            case "zyrex": {
-                exdata.link = `https://zyrex.io/markets/${coin_lw[0]}${coin_lw[1]}`;
-                js_request(`https://zyrex.io:443/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}.json`, res => exdata.fillj(res["ticker"], "last", "vol", "buy", "sell", "change"));
-                break;
-            }
-            case "livecoin": {
-                exdata.link = `https://www.livecoin.net/en/trading/${coin_up[0]}${coin_up[1]}`;
-                js_request(`https://api.livecoin.net/exchange/ticker?currencyPair=${coin_up[0]}${coin_up[1]}.json`, res => exdata.fillj(res, "last", "volume", "best_bid", "best_ask", "change"));
-                break;
-            }
-            case "tradeogre": {
-                exdata.link = `https://tradeogre.com/exchange/?currency=${coin_lw[1]}`;
-                js_request(`https://tradeogre.com/api/v1/ticker?market=${coin_up[0]}${coin_up[1]}`, res => exdata.fillj(res, "last", "baseVolume", "buy", "sell", "change"));
-                break;
-            }    
             case "exrates": {
                 exdata.link = `https://exrates.me/dashboard`; // no filter
                 js_request(`https://exrates.me/openapi/v1/public/ticker?currency_pair=${coin_lw[0]}_${coin_lw[1]}`, res => exdata.fillj(res[0], "last", "quoteVolume", "highestBid", "lowestAsk", "percentChange"));
+                break;
+            }
+            case "midex": { // birake based
+                exdata.link = `https://esbc.pro/link/exchange/midex`;//`https://dex.midas.investments/market/BIRAKE.${coin_up[0]}_BIRAKE.${coin_up[1]}`;
+                js_request(`https://api.birake.com/public/ticker/`, res => exdata.fillj(res.find(x => x.base === coin_up[1] && x.quote === coin_up[0]), "latest", "base_volume", "highest_bid", "lowest_ask", "percent_change"));
                 break;
             }
             case "binance": {
@@ -296,29 +329,92 @@ function get_ticker(ticker) {
                 js_request(`https://coinsbit.io/api/v1/public/ticker?market=${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res["result"], "last", "deal", "bid", "ask", "change"));
                 break;
             }
-            case "zolex": {
-                exdata.link = `https://zolex.org/trading/${coin_lw[0]}${coin_lw[1]}`;
-                Promise.all([
-                    async_request(`https://zolex.org/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}`).catch(() => { }),
-                    async_request(`https://zolex.org/api/v2/k?market=${coin_lw[0]}${coin_lw[1]}&limit=1440&period=1`).catch(() => { })
-                ]).then(([res, ohlc]) => {
-                    try {
-                        res = JSON.parse(res)["ticker"];
-                        res.chg = ternary_try(() => {
-                            tmp = JSON.parse(ohlc);
-                            return tmp[0][1] !== 0 ? (res["last"] / tmp[0][1] - 1) * 100 : 0;
-                        }, 0);
-                        exdata.fillj(res, "last", "", "buy", "sell", "chg");
-                        exdata.volume = ternary_try(() => {
-                            let vol = 0.00;
-                            for (let x of JSON.parse(ohlc).filter(x => x[5] > 0)) 
-                                vol += x.slice(1, 5).reduce((pv, cv) => pv + cv) / 4 * x[5];
-                            return vol.toFixed(8);
-                        }, "Error");
-                    }
-                    catch (e) { /**/ }
-                    resolve(exdata);
-                });
+            case "tradesatoshi": {
+                exdata.link = `https://tradesatoshi.com/Exchange/?market=${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://tradesatoshi.com/api/public/getmarketsummary?market=${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res.result, "last", "baseVolume", "ask", "bid", "change"));
+                break;
+            }
+            case "coinbene": {
+                exdata.link = `https://www.coinbene.com/exchange.html#/exchange?pairId=${coin_up[0]}${coin_up[1]}`;
+                js_request(`https://api.coinbene.com/v1/market/ticker?symbol=${coin_lw[0]}${coin_lw[1]}`, res => exdata.fillj(res.ticker[0], "last", "24hrAmt", "ask", "bid", "")); // not supported change
+                break;
+	    }
+	    case "finexboxnew": {
+	        exdata.link = `https://www.finexbox.com/market/pair/${coin_up[0]}-${coin_up[1]}.html`;
+	        Promise.all([
+			async_request(`https://xapi.finexbox.com/v1/ticker?market=${coin_lw[0]}_${coin_lw[1]}`).catch(() => { }),
+			async_request(`https://xapi.finexbox.com/v1/orders?market=${coin_lw[0]}_${coin_lw[1]}&count=1`).catch(() => { })
+		]).then(([res, ord]) => {
+			try {
+				res = JSON.parse(res).result;
+				exdata.set("price", res.price);
+				exdata.set("volume", res.volume * res.average);
+			}
+			catch (e) { /**/ }
+			try {
+				ord = JSON.parse(ord).result;
+				exdata.set("buy", ord.buy.length && ord.buy[0].price);
+				exdata.set("sell", ord.sell.length && ord.sell[0].price);
+			}
+			catch (e) { /**/ }
+			exdata.change = undefined;
+			resolve(exdata); // volume not 100% accurate, 24h change not supported
+		});
+		break;
+	    }
+            case "finexboxold": {
+                exdata.link = `https://www.finexbox.com/market/pair/${coin_up[0]}-${coin_up[1]}.html`;
+                js_request(`https://xapi.finexbox.com/v1/ticker?market=${coin_up[0]}_${coin_up[1]}`, res => exdata.fillj(res["result"], "price", "volume", "high", "low", "percent"));
+                break;
+            }
+            case "cryptohubexchange": {
+                exdata.link = `https://cryptohubexchange.com/market/${coin_up[0]}/${coin_up[1]}/`;
+                js_request(`https://cryptohubexchange.com/api/market/ticker/${coin_up[0]}/`, res => exdata.fillj(res[`${coin_up[1]}_${coin_up[0]}`], "last", "baseVolume", "lowestAsk", "highestBid", "percentChange"));
+                break;
+            }
+            case "altmarkets": {
+                exdata.link = `https://altmarkets.io/trading/${coin_lw[0]}${coin_lw[1]}`;
+                js_request(`https://altmarkets.io/api/v2/tickers/${coin_lw[0]}${coin_lw[1]}`, res => exdata.fillj(res.ticker, "last", "quotevol", "sell", "buy", "")); // not supported change
+                break;
+            }
+            case "nanuexchange": {
+                exdata.link = `https://nanu.exchange/exchange#${coin_lw[0]}_${coin_lw[1]}`;
+                js_request(`https://nanu.exchange/public?command=returnTicker&currencyPair=${coin_up[1]}_${coin_up[0]}`, res => exdata.fillj(res, "last", "baseVolume", "highestBid", "lowestAsk", "percentChange"));
+                break;
+            }
+            case "vinex": {
+                exdata.link = `https://vinex.network/market/${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://api.vinex.network/api/v2/get-ticker?market=${coin_up[1]}_${coin_up[0]}`, res => exdata.fillj(res["data"], "lastPrice", "baseVolume", "askPrice", "bidPrice", "change24h"));
+                break;
+            }
+            case "safetrade": {
+                exdata.link = `https://safe.trade/trading/${coin_lw[0]}${coin_lw[1]}`;
+                js_request(`https://safe.trade/api/v2/peatio/public/markets/${coin_lw[0]}${coin_lw[1]}/tickers`, res => exdata.fillj(res["ticker"], "last", "vol", "sell", "buy", "price_change_percent"));
+                break;
+            }
+            case "tokok": {
+                exdata.link = `https://www.tokok.com/market?symbol=${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://www.tokok.com/api/v1/ticker?symbol=${coin_lw[0]}_${coin_lw[1]}`, res => exdata.fillj(res["ticker"], "last", "vol", "sell", "buy", ""));
+                break;
+            }
+            case "vindax": {
+                exdata.link = `https://vindax.com/exchange-base.html?symbol=${coin_up[0]}_${coin_up[1]}`;
+                js_request(`https://api.vindax.com/api/v1/ticker/24hr?symbol=${coin_up[0]}${coin_up[1]}`, res => exdata.fillj(res, "lastPrice", "volume", "askPrice", "bidPrice", "priceChangePercent"));
+                break;
+            }
+            case "gjcom": {
+                exdata.link = `https://www.gj.com/trade/${coin_lw[0]}_${coin_lw[1]}`;
+                js_request(`https://api.vindax.com/api/v1/ticker/24hr?symbol=${coin_up[0]}${coin_up[1]}`, res => exdata.fillj(res, "lastPrice", "volume", "askPrice", "bidPrice", "priceChangePercent"));
+                break;
+            }
+            case "stakecube": {
+                exdata.link = `https://stakecube.net/app/exchange/${coin_up[1]}-${coin_up[0]}`;
+                js_request(`https://stakecube.net/app/api/v1/exchange/tickers?base=${coin_up[1]}&target=${coin_up[0]}`, res => exdata.fillj(res[0], "last_price", "volume", "ask", "bid", "percentChange"));
+                break;
+            }
+            case "livecoin": {
+                exdata.link = `https://www.livecoin.net/en/trading/${coin_up[0]}/${coin_up[1]}`;
+                js_request(`https://api.livecoin.net/exchange/ticker?currencyPair=${coin_up[0]}/${coin_up[1]}`, res => exdata.fillj(res, "last", "volume", "best_ask", "best_bid", "vwap"));
                 break;
             }
             default: {
@@ -328,6 +424,7 @@ function get_ticker(ticker) {
         
     });
 }
+
 function price_avg() {
     return new Promise((resolve, reject) => {
         let promises = [];
@@ -345,6 +442,7 @@ function price_avg() {
         });
     });
 }
+
 function price_btc_usd() {
     return new Promise((resolve, reject) => {
         let req = new XMLHttpRequest();
@@ -363,6 +461,7 @@ function price_btc_usd() {
         req.send();
     });
 }
+
 function request_mncount() {
     let cmd_res = bash_cmd(conf.requests.mncount);
     try {
@@ -374,9 +473,50 @@ function request_mncount() {
     cmd_res = cmd_res.toString().replace("\n", "").trim();
     return /^[0-9]+$/.test(cmd_res) ? cmd_res : "";
 }
+
+function request_mncount1() {
+    let cmd_res = bash_cmd(conf.requests.mncount1);
+    try {
+        let json = JSON.parse(cmd_res);
+         
+        if (json["basic-enabled"] !== undefined)
+            return json["basic-enabled"].toString();
+    }
+    catch (e) { /**/ }
+    cmd_res = cmd_res.toString().replace("\n", "").trim();
+    return /^[0-9]+$/.test(cmd_res) ? cmd_res : "";
+}
+
+function request_mncount2() {
+    let cmd_res = bash_cmd(conf.requests.mncount2);
+    try {
+        let json = JSON.parse(cmd_res);
+
+        if (json["super-enabled"] !== undefined)
+            return json["super-enabled"].toString();
+    }
+    catch (e) { /**/ }
+    cmd_res = cmd_res.toString().replace("\n", "").trim();
+    return /^[0-9]+$/.test(cmd_res) ? cmd_res : "";
+}
+
+function request_mncount3() {
+    let cmd_res = bash_cmd(conf.requests.mncount3);
+    try {
+        let json = JSON.parse(cmd_res);
+
+        if (json["bamf-enabled"] !== undefined)
+            return json["bamf-enabled"].toString();
+    }
+    catch (e) { /**/ }
+    cmd_res = cmd_res.toString().replace("\n", "").trim();
+    return /^[0-9]+$/.test(cmd_res) ? cmd_res : "";
+}
+
 function valid_request(req) {
     return conf.requests[req] !== undefined && conf.requests[req].trim() !== "";
 }
+
 function earn_fields(coinday, avgbtc, priceusd) {
     const earn_value = (mult) => {
         return (coinday * mult).toFixed(4) + " " + conf.coin + "\n" +
@@ -406,12 +546,51 @@ function earn_fields(coinday, avgbtc, priceusd) {
         }
     ];
 }
+
+function earn_fields_M(coinday, avgbtc, priceusd) {
+    const earn_value = (mult) => {
+        return (coinday * mult).toFixed(4) + " " + conf.coin + "\n" +
+            (coinday * mult * avgbtc).toFixed(8) + " BTC\n" +
+            (coinday * mult * avgbtc * priceusd).toFixed(2) + " USD";
+    };
+    return [
+        {
+            name: "Monthly",
+            value: earn_value(30),
+            inline: true
+        },
+
+    ];
+}
+
 function get_stage(blk) {
     for (let stage of conf.stages)
         if (blk <= stage.block)
             return stage;
     return conf.stages[conf.stages.length - 1];
 }
+
+function get_stage1(blk) {
+    for (let stage of conf.stages1)
+        if (blk <= stage.block)
+            return stage;
+    return conf.stages1[conf.stages1.length - 1];
+}
+
+function get_stage2(blk) {
+    for (let stage of conf.stages2)
+        if (blk <= stage.block)
+            return stage;
+    return conf.stages2[conf.stages2.length - 1];
+}
+
+function get_stage3(blk) {
+    for (let stage of conf.stages3)
+        if (blk <= stage.block)
+            return stage;
+    return conf.stages3[conf.stages3.length - 1];
+}
+
 function async_request(url) {
     return new Promise((resolve, reject) => {
         let req = new XMLHttpRequest();
@@ -431,9 +610,11 @@ function async_request(url) {
         req.send();
     });
 }
+
 function bash_cmd(cmd) {
     return (process.platform === "win32" ? spawnSync("cmd.exe", ["/S", "/C", cmd]) : spawnSync("sh", ["-c", cmd])).stdout.toString();
 }
+
 function create_no_exists(path, file = false) {
     if (!fs.existsSync(path)) {
         if (file)
@@ -442,6 +623,7 @@ function create_no_exists(path, file = false) {
             fs.mkdirSync(path);
     }
 }
+
 function simple_message(title, descr, color = conf.color.explorer) {
     return {
         embed: {
@@ -452,7 +634,6 @@ function simple_message(title, descr, color = conf.color.explorer) {
         }
     };
 }
-
 
 class BotCommand {
 
@@ -482,11 +663,10 @@ class BotCommand {
             embed.timestamp = new Date();
 
             for (let data of values) {
-               if (data.name.toLowerCase() === "southxchange" )  {
                 embed.addField(
                     data.name,
                     hide_undef("**| Price** : ", data.price) +
-                    hide_undef("**| Vol** : ", data.volume + " MON") +
+                    hide_undef("**| Vol** : ", data.volume + " **ZEL**") +
                     hide_undef("**| Buy** : ", data.buy) +
                     hide_undef("**| Sell** : ", data.sell) +
                     hide_undef("**| Chg** : ", data.change) +
@@ -494,25 +674,14 @@ class BotCommand {
                     true
                 );
             }
-              else {
-                embed.addField(
-                    data.name,
-                    hide_undef("**| Price** : ", data.price) +
-                    hide_undef("**| Vol** : ", data.volume + " BTC") +
-                    hide_undef("**| Buy** : ", data.buy) +
-                    hide_undef("**| Sell** : ", data.sell) +
-                    hide_undef("**| Chg** : ", data.change) +
-                    "[Link](" + data.link + ")",
-                    true
-                );
-            }
+
             if (embed.fields.length > 3 && embed.fields.length % 3 === 2) // fix bad placing if a row have 2 tickers
                 embed.addBlankField(true);
 
             this.fn_send(embed);
-        });
-    }
-
+          });
+        }
+    
     stats() {
         return Promise.all([
             new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
@@ -551,34 +720,14 @@ class BotCommand {
                             embed.addField("Supply", parseFloat(supply).toFixed(4).replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin, true);
                         break;
                     }
-                    case "collateral1": { 
+                    case "collateral": { 
                         if (valid.blockcount)
-                            embed.addField("Collateral1", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
+                            embed.addField("Collateral", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
                         break;
                     }
-                    case "collateral2": { 
+                    case "mnreward": { 
                         if (valid.blockcount)
-                            embed.addField("Collateral2", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
-                        break;
-                    }
-                    case "collateral3": { 
-                        if (valid.blockcount)
-                            embed.addField("Collateral3", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
-                        break;
-                    }
-                    case "mnreward1": { 
-                        if (valid.blockcount)
-                            embed.addField("MN Reward1", stage.mn + " " + conf.coin, true);
-                        break;
-                    }
-                    case "mnreward2": { 
-                        if (valid.blockcount)
-                            embed.addField("MN Reward2", stage.mn + " " + conf.coin, true);
-                        break;
-                    }
-                    case "mnreward3": { 
-                        if (valid.blockcount)
-                            embed.addField("MN Reward3", stage.mn + " " + conf.coin, true);
+                            embed.addField("MN Reward", stage.mn + " " + conf.coin, true);
                         break;
                     }
                     case "powreward": { 
@@ -630,6 +779,301 @@ class BotCommand {
 
         });
     }
+
+    stats1() {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount1())),
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.supply)))
+        ]).then(([blockcount, mncount1, supply]) => {
+            
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount1: !isNaN(mncount1) && mncount1.trim() !== "",
+                supply: !isNaN(supply) && supply.trim() !== ""
+            };
+
+            let stage = get_stage1(blockcount);
+            let stg_index = conf.stages1.indexOf(stage);
+
+            let embed = new Discord.RichEmbed();
+            embed.title = conf.coin + " Stats Level Basic";
+            embed.color = conf.color.basic;
+            embed.timestamp = new Date();
+
+            for (let stat of conf.statorder) {
+                switch (stat) {
+                    case "blockcount": {
+                        if (valid.blockcount)
+                            embed.addField("Block Count", blockcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "mncount": {
+                        if (valid.mncount1)
+                            embed.addField("MN Count Basic", mncount1.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "supply": { 
+                        if (valid.supply)
+                            embed.addField("Supply", parseFloat(supply).toFixed(4).replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin, true);
+                        break;
+                    }
+                    case "collateral": { 
+                        if (valid.blockcount)
+                            embed.addField("Collateral", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
+                        break;
+                    }
+                    case "mnreward": { 
+                        if (valid.blockcount)
+                            embed.addField("MN Reward", stage.mn + " " + conf.coin, true);
+                        break;
+                    }
+                    case "powreward": { 
+                        if (stage.pow !== undefined && valid.blockcount)
+                            embed.addField("POW Reward", stage.pow + " " + conf.coin, true);
+                        break;
+                    }
+                    case "posreward": {
+                        if (stage.pos !== undefined && valid.blockcount)
+                            embed.addField("POS Reward", stage.pos + " " + conf.coin, true);
+                        break;
+                    }
+                    case "locked": { 
+                        if (valid.blockcount && valid.mncount1 && valid.supply)
+                            embed.addField("Locked", (mncount1 * stage.coll).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin + " (" + (mncount1 * stage.coll / supply * 100).toFixed(2) + "%)", true);
+                        break;
+                    }
+                    case "avgmnreward": {
+                        if (valid.mncount1)
+                            embed.addField("Avg. MN Reward", parseInt(mncount1 / (86400 / conf.blocktime)) + "d " + parseInt(mncount1 / (3600 / conf.blocktime) % 24) + "h " + parseInt(mncount1 / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "1stmnreward": {
+                        let x3mncount = mncount * 3;
+                        if (valid.mncount)
+                            embed.addField("1st MN Reward", parseInt(x3mncount / (86400 / conf.blocktime)) + "d " + parseInt(x3mncount / (3600 / conf.blocktime) % 24) + "h " + parseInt(x3mncount / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "nextstage": { 
+                        if (valid.blockcount)
+                            embed.addField("Next Stage", parseInt((conf.stages[stg_index].block - blockcount) / (86400 / conf.blocktime)) + "d " + parseInt((conf.stages[stg_index].block - blockcount) / (3600 / conf.blocktime) % 24) + "h " + parseInt((conf.stages[stg_index].block - blockcount) / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "": {
+                        embed.addBlankField(true);
+                        break;
+                    }
+                }
+            }
+            
+            if (valid_request("blockcount") && !valid.blockcount)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `blockcount` request\n";
+            if (valid_request("mncount1") && !valid.mncount1)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `mncount1` request\n";
+            if (valid_request("supply") && !valid.supply)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `supply` request";
+
+            this.fn_send(embed);
+
+        });
+    }
+
+    stats2() {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount2())),
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.supply)))
+        ]).then(([blockcount, mncount2, supply]) => {
+
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount2: !isNaN(mncount2) && mncount2.trim() !== "",
+                supply: !isNaN(supply) && supply.trim() !== ""
+            };
+
+            let stage = get_stage2(blockcount);
+            let stg_index = conf.stages2.indexOf(stage);
+
+            let embed = new Discord.RichEmbed();
+            embed.title = conf.coin + " Stats Level Super";
+            embed.color = conf.color.super1;
+            embed.timestamp = new Date();
+
+            for (let stat of conf.statorder) {
+                switch (stat) {
+                    case "blockcount": {
+                        if (valid.blockcount)
+                            embed.addField("Block Count", blockcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "mncount": {
+                        if (valid.mncount2)
+                            embed.addField("MN Count Super", mncount2.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "supply": {
+                        if (valid.supply)
+                            embed.addField("Supply", parseFloat(supply).toFixed(4).replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin, true);
+                         break;
+                    }
+                    case "collateral": {
+                        if (valid.blockcount)
+                            embed.addField("Collateral", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
+                        break;
+                    }
+                    case "mnreward": {
+                        if (valid.blockcount)
+                            embed.addField("MN Reward", stage.mn + " " + conf.coin, true);
+                        break;
+                    }
+                    case "powreward": {
+                        if (stage.pow !== undefined && valid.blockcount)
+                            embed.addField("POW Reward", stage.pow + " " + conf.coin, true);
+                        break;
+                    }
+                    case "posreward": {
+                        if (stage.pos !== undefined && valid.blockcount)
+                            embed.addField("POS Reward", stage.pos + " " + conf.coin, true);
+                        break;
+                    }
+                    case "locked": {
+                        if (valid.blockcount && valid.mncount2 && valid.supply)
+                            embed.addField("Locked", (mncount2 * stage.coll).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin + " (" + (mncount2 * stage.coll / supply * 100).toFixed(2) + "%)", true);
+                        break;
+                    }
+                    case "avgmnreward": {
+                        if (valid.mncount2)
+                            embed.addField("Avg. MN Reward", parseInt(mncount2 / (86400 / conf.blocktime)) + "d " + parseInt(mncount2 / (3600 / conf.blocktime) % 24) + "h " + parseInt(mncount2 / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "1stmnreward": {
+                        let x3mncount = mncount * 3;
+                        if (valid.mncount)
+                            embed.addField("1st MN Reward", parseInt(x3mncount / (86400 / conf.blocktime)) + "d " + parseInt(x3mncount / (3600 / conf.blocktime) % 24) + "h " + parseInt(x3mncount / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "nextstage": {
+                        if (valid.blockcount)
+                            embed.addField("Next Stage", parseInt((conf.stages[stg_index].block - blockcount) / (86400 / conf.blocktime)) + "d " + parseInt((conf.stages[stg_index].block - blockcount) / (3600 / conf.blocktime) % 24) + "h " + parseInt((conf.stages[stg_index].block - blockcount) / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "": {
+                        embed.addBlankField(true);
+                        break;
+                    }
+                }
+            }
+
+            if (valid_request("blockcount") && !valid.blockcount)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `blockcount` request\n";
+            if (valid_request("mncount2") && !valid.mncount2)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `mncount1` request\n";
+            if (valid_request("supply") && !valid.supply)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `supply` request";
+
+            this.fn_send(embed);
+
+        });
+    }
+     
+    stats3() {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount3())),
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.supply)))
+        ]).then(([blockcount, mncount3, supply]) => {
+
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount3: !isNaN(mncount3) && mncount3.trim() !== "",
+                supply: !isNaN(supply) && supply.trim() !== ""
+            };
+
+            let stage = get_stage3(blockcount);
+            let stg_index = conf.stages3.indexOf(stage);
+
+            let embed = new Discord.RichEmbed();
+            embed.title = conf.coin + " Stats Level Bamf"
+            embed.color = conf.color.bamf;
+            embed.timestamp = new Date();
+
+            for (let stat of conf.statorder) {
+                switch (stat) {
+                    case "blockcount": {
+                        if (valid.blockcount)
+                            embed.addField("Block Count", blockcount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "mncount": {
+                        if (valid.mncount3)
+                            embed.addField("MN Count Bamf", mncount3.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","), true);
+                        break;
+                    }
+                    case "supply": {
+                        if (valid.supply)
+                            embed.addField("Supply", parseFloat(supply).toFixed(4).replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin, true);
+                         break;
+                    }
+                    case "collateral": {
+                        if (valid.blockcount)
+                            embed.addField("Collateral", stage.coll.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin, true);
+                        break;
+                    }
+                    case "mnreward": {
+                        if (valid.blockcount)
+                            embed.addField("MN Reward", stage.mn + " " + conf.coin, true);
+                        break;
+                    }
+                    case "powreward": {
+                        if (stage.pow !== undefined && valid.blockcount)
+                            embed.addField("POW Reward", stage.pow + " " + conf.coin, true);
+                        break;
+                    }
+                    case "posreward": {
+                        if (stage.pos !== undefined && valid.blockcount)
+                            embed.addField("POS Reward", stage.pos + " " + conf.coin, true);
+                        break;
+                    }
+                    case "locked": {
+                        if (valid.blockcount && valid.mncount3 && valid.supply)
+                            embed.addField("Locked", (mncount3 * stage.coll).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " " + conf.coin + " (" + (mncount3 * stage.coll / supply * 100).toFixed(2) + "%)", true);
+                        break;
+                    }
+                    case "avgmnreward": {
+                        if (valid.mncount3)
+                            embed.addField("Avg. MN Reward", parseInt(mncount3 / (86400 / conf.blocktime)) + "d " + parseInt(mncount3 / (3600 / conf.blocktime) % 24) + "h " + parseInt(mncount3 / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "1stmnreward": {
+                        let x3mncount = mncount * 3;
+                        if (valid.mncount)
+                            embed.addField("1st MN Reward", parseInt(x3mncount / (86400 / conf.blocktime)) + "d " + parseInt(x3mncount / (3600 / conf.blocktime) % 24) + "h " + parseInt(x3mncount / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "nextstage": {
+                        if (valid.blockcount)
+                            embed.addField("Next Stage", parseInt((conf.stages[stg_index].block - blockcount) / (86400 / conf.blocktime)) + "d " + parseInt((conf.stages[stg_index].block - blockcount) / (3600 / conf.blocktime) % 24) + "h " + parseInt((conf.stages[stg_index].block - blockcount) / (60 / conf.blocktime) % 60) + "m", true);
+                        break;
+                    }
+                    case "": {
+                        embed.addBlankField(true);
+                        break;
+                    }
+                }
+            }
+
+            if (valid_request("blockcount") && !valid.blockcount)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `blockcount` request\n";
+            if (valid_request("mncount3") && !valid.mncount3)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `mncount3` request\n";
+            if (valid_request("supply") && !valid.supply)
+                embed.description = (embed.description === undefined ? "" : embed.description) + "There seems to be a problem with the `supply` request";
+
+            this.fn_send(embed);
+
+        });
+    }
+    
     stages() {
         return new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))).then(blockcount => {
 
@@ -666,27 +1110,147 @@ class BotCommand {
 
         });
     }
-    earnings(mns) {
+    
+    earnings(mns1 , mns2, mns3 ) {
         return Promise.all([
             new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
-            new Promise((resolve, reject) => resolve(request_mncount())),
-            new Promise((resolve, reject) => resolve(price_avg())),
+            new Promise((resolve, reject) => resolve(request_mncount1())),
+            new Promise((resolve, reject) => resolve(request_mncount2())),
+            new Promise((resolve, reject) => resolve(request_mncount3())),
+	    new Promise((resolve, reject) => resolve(price_avg())),
             new Promise((resolve, reject) => resolve(price_btc_usd()))
-        ]).then(([blockcount, mncount, avgbtc, priceusd]) => {
+        ]).then(([blockcount, mncount1, mncount2, mncount3, avgbtc, priceusd]) => {
 
             let valid = {
                 blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
-                mncount: !isNaN(mncount) && mncount.trim() !== ""
+                mncount1: !isNaN(mncount1) && mncount1.trim() !== "",
+                mncount2: !isNaN(mncount2) && mncount2.trim() !== "",
+                mncount3: !isNaN(mncount3) && mncount3.trim() !== ""
             };
 
-            if (valid.blockcount && valid.mncount) {
-                mns = mns !== undefined && mns > 0 ? mns : 1;
-                let stage = get_stage(blockcount);
-                let coinday = 86400 / conf.blocktime / mncount * stage.mn;
+            if (valid.blockcount && valid.mncount1  && valid.mncount2 && valid.mncount3 ) {
+                mns1 = mns1 !== undefined && mns1 > 0 ? mns1 : 0;
+		mns2 = mns2 !== undefined && mns2 > 0 ? mns2 : 0;
+                mns3 = mns3 !== undefined && mns3 > 0 ? mns3 : 0;
+    
+                let stage1 = get_stage1(blockcount);
+		let stage2 = get_stage2(blockcount);
+                let stage3 = get_stage3(blockcount);
+    
+                let coinday1 = 86400 / conf.blocktime / mncount1 * stage1.mn;
+                let coinday2 = 86400 / conf.blocktime / mncount2 * stage2.mn;
+		let coinday3 = 86400 / conf.blocktime / mncount3 * stage3.mn;    
+
                 this.fn_send({
                     embed: {
-                        title: conf.coin + " Earnings" + (mns !== 1 ? " (" + mns + " MNs)" : ""),
+                        title: conf.coin + " Earnings " ,
                         color: conf.color.coininfo,
+                        fields: [
+            
+                            {
+                                name: "Basic",
+                                value:  mns1 + " Mn(s)" ,
+                                inline: true
+                            },
+                            {
+                                name: "Super",
+                                value:  mns2 + " Mn(s)"   ,
+                                inline: true
+                            },
+                            {
+                                name: "Bamf",
+                                value: mns3 + " Mn(s)" ,
+                                inline: true
+                            },
+                            
+	         	            {
+                                name: "ROI ",
+                                value: (36500 / (stage1.coll / coinday1)).toFixed(2) + "%\n" + (stage1.coll / coinday1).toFixed(2) + " days",
+                                inline: true
+                            },
+		                    {
+                                name: "ROI ",
+                                value: (36500 / (stage2.coll / coinday2)).toFixed(2) + "%\n" + (stage2.coll / coinday2).toFixed(2) + " days",
+                                inline: true
+                            },
+		                    {
+                                name: "ROI ",
+                                value: (36500 / (stage3.coll / coinday3)).toFixed(2) + "%\n" + (stage3.coll / coinday3).toFixed(2) + " days",
+                                inline: true
+                            },
+				
+                            {
+                                name: "MN Price ",
+                                value: (stage1.coll * avgbtc).toFixed(8) + " BTC\n" + (stage1.coll * avgbtc * priceusd).toFixed(2) + " USD",
+                                inline: true
+                            },
+			                {
+                                name: "MN Price ",
+                                value: (stage2.coll * avgbtc).toFixed(8) + " BTC\n" + (stage2.coll * avgbtc * priceusd).toFixed(2) + " USD",
+                                inline: true
+                            },
+	                        {
+                                name: "MN Price ",
+                                value: (stage3.coll * avgbtc).toFixed(8) + " BTC\n" + (stage3.coll * avgbtc * priceusd).toFixed(2) + " USD",
+                                inline: true
+                            },
+                            {
+                                name: "Time to get 1 MN ",
+                                value:  mns1 > 0 ? ((stage1.coll / (coinday1 * mns1)).toFixed(2) + " days") :  "----" ,
+                                inline: true
+                            },
+                            {
+                                name: "Time to get 1 MN ",
+                                value:  mns2 > 0 ? ((stage2.coll / (coinday2 * mns2)).toFixed(2) + " days" ) : "----",
+                                inline: true
+                            },
+                            {
+                                name: "Time to get 1 MN ",
+                                value:  mns3 > 0 ? ((stage3.coll / (coinday3 * mns3)).toFixed(2) + " days" ) : "----",
+                                inline: true
+                            }
+		
+           		
+                        ].concat(earn_fields_M(coinday1 * mns1, avgbtc, priceusd)).concat(earn_fields_M(coinday2 * mns2, avgbtc, priceusd)).concat(earn_fields_M(coinday3 * mns3, avgbtc, priceusd)) ,
+                        timestamp: new Date()
+                    }
+                });
+            }
+            else {
+                this.fn_send({
+                    embed: {
+                        title: conf.coin + " Earnings",
+                        color: conf.color.coininfo,
+                        description: (valid.blockcount ? "" : "There seems to be a problem with the `blockcount` request\n") + (valid.mncount1 ? "" : "There seems to be a problem with the `mncount` request"),
+                        timestamp: new Date()
+                    }
+                });
+            }
+        });
+    }
+
+    earnings1(mns) {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount1())),
+            new Promise((resolve, reject) => resolve(price_avg())),
+            new Promise((resolve, reject) => resolve(price_btc_usd()))
+        ]).then(([blockcount, mncount1, avgbtc, priceusd]) => {
+
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount1: !isNaN(mncount1) && mncount1.trim() !== ""
+            };
+
+            if (valid.blockcount && valid.mncount1) {
+                mns = mns !== undefined && mns > 0 ? mns : 1;
+                let stage = get_stage1(blockcount);
+                let coinday = 86400 / conf.blocktime / mncount1 * stage.mn;
+                this.fn_send({
+                    embed: {
+
+                        title: conf.coin + " Earnings Basic" + (mns !== 1 ? " (" + mns + " MNs)" : ""),
+                        color: conf.color.basic,
                         fields: [
                             {
                                 name: "ROI",
@@ -712,15 +1276,129 @@ class BotCommand {
             else {
                 this.fn_send({
                     embed: {
-                        title: conf.coin + " Earnings",
-                        color: conf.color.coininfo,
-                        description: (valid.blockcount ? "" : "There seems to be a problem with the `blockcount` request\n") + (valid.mncount ? "" : "There seems to be a problem with the `mncount` request"),
+
+                        title: conf.coin + " Earnings Basic",
+                        color: conf.color.coininfo1,
+                        description: (valid.blockcount ? "" : "There seems to be a problem with the `blockcount` request\n") + (valid.mncount1 ? "" : "There seems to be a problem with the `mncount` request"),
                         timestamp: new Date()
                     }
                 });
             }
         });
     }
+
+    earnings2(mns) {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount2())),
+            new Promise((resolve, reject) => resolve(price_avg())),
+            new Promise((resolve, reject) => resolve(price_btc_usd()))
+        ]).then(([blockcount, mncount2, avgbtc, priceusd]) => {
+
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount2: !isNaN(mncount2) && mncount2.trim() !== ""
+            };
+
+            if (valid.blockcount && valid.mncount2) {
+                mns = mns !== undefined && mns > 0 ? mns : 1;
+                let stage = get_stage2(blockcount);
+                let coinday = 86400 / conf.blocktime / mncount2 * stage.mn;
+                this.fn_send({
+                    embed: {
+                        title: conf.coin + " Earnings Super" + (mns !== 1 ? " (" + mns + " MNs)" : ""),
+                        color: conf.color.super1,
+                        fields: [
+                            {
+                                name: "ROI",
+                                value: (36500 / (stage.coll / coinday)).toFixed(2) + "%\n" + (stage.coll / coinday).toFixed(2) + " days",
+                                inline: true
+                            },
+                            {
+                                name: "MN Price",
+                                value: (stage.coll * avgbtc).toFixed(8) + " BTC\n" + (stage.coll * avgbtc * priceusd).toFixed(2) + " USD",
+                                inline: true
+                            }
+                        ].concat(mns === 1 ? [{ name: "\u200b", value: "\u200b", inline: true }] : [
+                            {
+                                name: "Time to get 1 MN",
+                                value: (stage.coll / (coinday * mns)).toFixed(2) + " days",
+                                inline: true
+                            }
+                        ]).concat(earn_fields(coinday * mns, avgbtc, priceusd)),
+                        timestamp: new Date()
+                    }
+                });
+            }
+            else {
+                this.fn_send({
+                    embed: {
+                        title: conf.coin + " Earnings Super",
+                        color: conf.color.coininfo2,
+                        description: (valid.blockcount ? "" : "There seems to be a problem with the `blockcount` request\n") + (valid.mncount2 ? "" : "There seems to be a problem with the `mncount` request"),
+                        timestamp: new Date()
+                    }
+                });
+            }
+        });
+    }
+    
+    earnings3(mns) {
+        return Promise.all([
+            new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.blockcount))),
+            new Promise((resolve, reject) => resolve(request_mncount3())),
+            new Promise((resolve, reject) => resolve(price_avg())),
+            new Promise((resolve, reject) => resolve(price_btc_usd()))
+        ]).then(([blockcount, mncount3, avgbtc, priceusd]) => {
+
+            let valid = {
+                blockcount: !isNaN(blockcount) && blockcount.trim() !== "",
+                mncount3: !isNaN(mncount3) && mncount3.trim() !== ""
+            };
+
+            if (valid.blockcount && valid.mncount3) {
+                mns = mns !== undefined && mns > 0 ? mns : 1;
+                let stage = get_stage3(blockcount);
+                let coinday = 86400 / conf.blocktime / mncount3 * stage.mn;
+                this.fn_send({
+                    embed: {
+                        title: conf.coin + " Earnings Bamf" + (mns !== 1 ? " (" + mns + " MNs)" : ""),
+                        color: conf.color.bamf,
+                        fields: [
+                            {
+                                name: "ROI",
+                                value: (36500 / (stage.coll / coinday)).toFixed(2) + "%\n" + (stage.coll / coinday).toFixed(2) + " days",
+                                inline: true
+                            },
+                            {
+                                name: "MN Price",
+                                value: (stage.coll * avgbtc).toFixed(8) + " BTC\n" + (stage.coll * avgbtc * priceusd).toFixed(2) + " USD",
+                                inline: true
+                            }
+                        ].concat(mns === 1 ? [{ name: "\u200b", value: "\u200b", inline: true }] : [
+                            {
+                                name: "Time to get 1 MN",
+                                value: (stage.coll / (coinday * mns)).toFixed(2) + " days",
+                                inline: true
+                            }
+                        ]).concat(earn_fields(coinday * mns, avgbtc, priceusd)),
+                        timestamp: new Date()
+                    }
+                });
+            }
+            else {
+                this.fn_send({
+                    embed: {
+                        title: conf.coin + " Earnings Bamf",
+                        color: conf.color.coininfo3,
+                        description: (valid.blockcount ? "" : "There seems to be a problem with the `blockcount` request\n") + (valid.mncount3 ? "" : "There seems to be a problem with the `mncount` request"),
+                        timestamp: new Date()
+                    }
+                });
+            }
+        });
+    }	
+    
     mining(hr, mult) {
         let letter = "";
 
@@ -790,12 +1468,25 @@ class BotCommand {
                 }
             });
         }
+    }   
+    
+    addnodes() {
+        new Promise((resolve, reject) => resolve(bash_cmd(conf.requests.addnodes))).then(info => {
+            try {
+                let str = "";
+                JSON.parse(info).slice(0, 16).forEach(x => str += `addnode=${x.addr}\n`);
+                this.fn_send(simple_message(conf.coin + " addnodes", "```ini\n" + str + "\n```", conf.color.addnodes));
+            }
+            catch (e) {
+                this.msg.send(simple_message("Addnodes", "There seems to be a problem with the `addnodes` request"));
+            }
+        });
     }
-
+    
     balance(addr) {
         try {
             let json = JSON.parse(bash_cmd(conf.requests.balance + addr));
-            if (json["sent"] !== undefined && json["received"] !== undefined && json["balance"] !== undefined) {
+            if (json["totalSent"] !== undefined && json["totalReceived"] !== undefined && json["balance"] !== undefined) {
                 this.fn_send({
                     embed: {
                         title: "Balance",
@@ -807,12 +1498,12 @@ class BotCommand {
                             },
                             {
                                 name: "Sent",
-                                value: json["sent"].toString().replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin,
+                                value: json["totalSent"].toString().replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin,
                                 inline: true
                             },
                             {
                                 name: "Received",
-                                value: json["received"].toString().replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin,
+                                value: json["totalReceived"].toString().replace(/(\d)(?=(?:\d{3})+(?:\.|$))|(\.\d{4}?)\d*$/g, (m, s1, s2) => s2 || s1 + ',') + " " + conf.coin,
                                 inline: true
                             },
                             {
@@ -867,7 +1558,7 @@ class BotCommand {
         for (let addr of addrs) {
             try {
                 let json = JSON.parse(bash_cmd(conf.requests.balance + addr));
-                if (json["sent"] !== undefined && json["received"] !== undefined && json["balance"] !== undefined) {
+                if (json["totalSent"] !== undefined && json["totalReceived"] !== undefined && json["balance"] !== undefined) {
                     let addrs_list = fs.existsSync(users_addr_folder + "/" + this.msg.author.id + ".txt") ? fs.readFileSync(users_addr_folder + "/" + this.msg.author.id + ".txt", "utf8").split(/\r?\n/) : [];
                     if (addrs_list.indexOf(addr) === -1) {
                         fs.writeFileSync(users_addr_folder + "/" + this.msg.author.id + ".txt", addrs_list.concat([addr]).join("\n"));
@@ -883,6 +1574,7 @@ class BotCommand {
             this.fn_send(simple_message("User Address Add", "Invalid address: `" + addr + "`\n(Addresses that never received a single coin might be considered as invalid)"));
         }
     }
+    
     my_address_del(addrs) {
         create_no_exists(users_addr_folder);
         for (let addr of addrs) {
@@ -905,6 +1597,7 @@ class BotCommand {
             }
         }
     }
+    
     my_address_list() {
         create_no_exists(users_addr_folder);
         if (!fs.existsSync(users_addr_folder + "/" + this.msg.author.id + ".txt")) {
@@ -921,6 +1614,7 @@ class BotCommand {
             this.msg.author.send(addr_str);
         }
     }
+    
     my_balance() {
         create_no_exists(users_addr_folder);
         if (!fs.existsSync(users_addr_folder + "/" + this.msg.author.id + ".txt")) {
@@ -931,10 +1625,11 @@ class BotCommand {
         let sent = 0.00, recv = 0.00, bal = 0.00;
         for (let addr of fs.readFileSync(users_addr_folder + "/" + this.msg.author.id + ".txt", "utf-8").split(/\r?\n/).filter(Boolean)) {
             try {
-                let json = JSON.parse(bash_cmd(conf.requests.balance + addr));
-                if (json["sent"] !== undefined && json["received"] !== undefined && json["balance"] !== undefined) {
-                    sent += parseFloat(json["sent"]);
-                    recv += parseFloat(json["received"]);
+                let json = JSON.parse(bash_cmd(conf.requests.balance + addr ));
+                
+                if (json["totalSent"] !== undefined && json["totalReceived"] !== undefined && json["balance"] !== undefined) {
+                    sent += parseFloat(json["totalSent"]);
+                    recv += parseFloat(json["totalReceived"]);
                     bal += parseFloat(json["balance"]);
                 }
             }
@@ -972,11 +1667,20 @@ class BotCommand {
         create_no_exists(users_mn_folder);
         for (let addr of addrs) {
             try {
+                console.log(addr) ; 
                 let json = JSON.parse(bash_cmd(conf.requests.mnstat + addr));
                 if (Array.isArray(json))
                     json = json[0];
+
+                  
                 if (json["status"] !== undefined && json["addr"] === addr) {
+
+                    console.log("here") ;
+
                     let addrs_list = fs.existsSync(users_mn_folder + "/" + this.msg.author.id + ".txt") ? fs.readFileSync(users_mn_folder + "/" + this.msg.author.id + ".txt", "utf8").split(/\r?\n/) : [];
+
+                    console.log(addrs_list) ;
+ 
                     if (addrs_list.indexOf(addr) === -1) {
                         fs.writeFileSync(users_mn_folder + "/" + this.msg.author.id + ".txt", addrs_list.concat([addr]).join("\n"));
                         this.fn_send(simple_message("User Masternode Add", "Masternode address `" + addr + "` assigned to <@" + this.msg.author.id + ">\nStatus: " + json["status"]));
@@ -991,6 +1695,7 @@ class BotCommand {
             }
         }
     }
+    
     my_masternode_del(addrs) {
         create_no_exists(users_mn_folder);
         for (let addr of addrs) {
@@ -1013,6 +1718,7 @@ class BotCommand {
             }
         }
     }
+    
     my_masternode_list() {
         create_no_exists(users_mn_folder);
         if (!fs.existsSync(users_mn_folder + "/" + this.msg.author.id + ".txt")) {
@@ -1046,6 +1752,7 @@ class BotCommand {
                 this.fn_send(simple_message("User Masternode List (" + i + "/" + splits + ")", mn_split.splice(0, 30).join("\n")));
         }
     }
+    
     my_earnings() {
         create_no_exists(users_mn_folder);
         if (!fs.existsSync(users_mn_folder + "/" + this.msg.author.id + ".txt")) {
@@ -1112,8 +1819,17 @@ class BotCommand {
                         name: "Coin Info:",
                         value:
                             " - **" + conf.prefix + "stats** : get the current stats of the " + conf.coin + " blockchain\n" +
+                            
+                            "   - **" + conf.prefix + "basic** : get the current Basic stats of the " + conf.coin + " blockchain\n" +
+                            "   - **" + conf.prefix + "super** : get the current Super stats of the " + conf.coin + " blockchain\n" +
+                            "   - **" + conf.prefix + "bamf** : get the current Bamf stats of the " + conf.coin + " blockchain\n" +
+  
                             " - **" + conf.prefix + "stages** : get the info of the upcoming reward structures\n" +
-                            " - **" + conf.prefix + "earnings [amount of MNs]** : get the expected earnings per masternode, aditionally you can put the amount of MNs\n" +
+                            " - **" + conf.prefix + "earnings [MN_Basic  MN_Super MN_Bamf]** : get the expected earnings per masternode, aditionally you can put the amount of MNs at each level\n" +
+                            " - **" + conf.prefix + "earningsbasic [amount of MNs]** : get the expected earnings per masternode Basic\n" +
+                            " - **" + conf.prefix + "earningssuper [amount of MNs]** : get the expected earnings per masternode Super\n" +
+                            " - **" + conf.prefix + "earningsbamf  [amount of MNs]** : get the expected earnings per masternode Bamf\n" +
+                            " - **" + conf.prefix + "addnodes** : get a addnodes list for the chain sync\n" +                      
                             " - **" + conf.prefix + "mining <hashrate> [K/M/G/T]** : get the expected earnings with the given hashrate, aditionally you can put the hashrate multiplier (K = KHash/s, M = MHash/s, ...)"
                     },
                     {
@@ -1157,25 +1873,39 @@ class BotCommand {
     }
     about() {
         const donate = { // don't be evil with this, please
-            "BTC": "3F6J19DmD5jowwwQbE9zxXoguGPVR716a7",
-            "BCARD": "BQmTwK685ajop8CFY6bWVeM59rXgqZCTJb",
-            "SNO": "SZ4pQpuqq11EG7dw6qjgqSs5tGq3iTw2uZ",
-            "RESQ": "QXFszBEsRXWy2D2YFD39DUqpnBeMg64jqX",
-            "CFL": "c4fuTdr7Z7wZy8WQULmuAdfPDReWfDcoE5",
-            "KYD": "YczLtMSvv1jhAPzuZ9xyDKZr24nTkuACLZ",
-            "C4L": "CLVaYLHDHuxcpybt1pModcYV4DZMudGWnc",
-            "REVU": "R9jUZVXhhnNf9dRmCSvhosEmASnmSWmJy6",
-            "MCPC": "MCwe8WxWNmcZL1CpdpG3yuudGYVphmTSLE"
+            "BTC":	"1LqBf2ephKHFB1xYezoRjWG3or6TNA5NT1"
+            "ZEL":	"t1h5ZGK8hupD6A3v8wHmUjPZdqUfLcyX28U"
+            "RVN":	"RV7NjYY7J95pF2Kk8AnYq2bFa7Z3yFLdVG"
+            "MON":	"MurYZ1KR2jTW5uBNiZvPcdzXkJXTt4WsjC"
+            "AGM":	"MG4gQB6JaYDWvw6GBMZtfCjxWBjkmActxq"
+            "INN": 	"i8jsXVFCTRUJucWxquSnqhJ5kMti2fJwhA"
+            "LUX":	"LhQc7FwxFCGiYk688ukNyf9UgYj42wZ9hm"
+            "BIR":	"KRZhzCqTpJycxK5oqDhxQv5jvdUE4m5aiq"
+            "COW":	"CSJCyNzC3FUFWfiUsZoqAJQmkfjGBkvpij"
+            "ZCR":	"zHR4iac4kCkvqjDZzF9x9JaG8wXR7agNm4"
+            "DRV":	"DAWBSBHwmLDA1JERx6UHbxTLUyiJ3DHpZW"
+            "GIN":	"GcSpTEqwVkoJMuQ9vjiQC7MQNatxrQuKrf"
+            "BITC":	"b2RwJqvxyTQk7PZ1ZKywN4LSLPBS7EURR1brKaiVojawUoX1WmR9"
+            "XDNA": "XXpUbHFAYSygvxMcVFrdbDKdNFBexd8kvo"
+            "ZEON":	"ZMgp6yzp2VtUUMmbzYhpBt7yXiYJwdRi46"
+            "KONJ":	"KnYiKPJMvTeUAPmDKvk7pJrVgmpHnt9Ni4"
+            "XGCS":	"XJEzQ121yWJPTeDCBQQYt9ec8fMta6T6xJ"
+            "REEX":	"Rn16V4hb5EoiChceotZxyCPWHfdHdsg3wR"
+            "DRVF":	"Dc9af6ivfMMywfr46AZU3wgkzNMBug5xoQ"
+            "MDEX":	"XvxfCJb4FHaLCTiA3SBJEopE3uaDJfymdo"
+            "NTRN":	"9TkgUPscqst6uAbuw4wMidTjqirmhpRD8c"
+            "ESBC":	"eJiJY8FuyFxdRzHJwcVogjv1gbB3o73diM"
         };
         this.fn_send({
             embed: {
                 title: "About",
-                color: conf.color.other,
-                description: "**Author:** <@464599914962485260>\n" +
-                    "**Source Code:** [Link](https://github.com/neo3587/discord_cryptobot)\n" +
-                    "**Description:** A simple bot for " + conf.coin + " to check the current status of the currency in many ways, use **!help** to see these ways\n" +
-                    (conf.coin in donate ? "**" + conf.coin + " Donations (to author):** `" + donate[conf.coin] + "`\n" : "") +
-                    "**BTC Donations (to author):** `" + donate["BTC"] + "`"
+                color: conf.color.about,
+                description: "**Modified By:** Cryptominer\n" +
+                    "**Source Code:** [Link](https://github.com/CryptominerPaul/)\n" +
+                    "**Description:** A simple bot for " + conf.coin + " to check the current status of the currency in many ways, use **%help** to see these ways\n" +
+                    (conf.coin in donate ? "**" + conf.coin + " Donations (To Cryptominer):** `" + donate[conf.coin] + "`\n" : "") +
+                    "**BTC Donations (to Cryptominer):** `" + donate.BTC + "`\n" +
+                    "**BTC Donations (to Original Author):** `3F6J19DmD5jowwwQbE9zxXoguGPVR716a7`"
             }
         });
     }
@@ -1214,7 +1944,6 @@ class BotCommand {
 
 }
 
-
 function handle_child() {
     let child = spawn(process.argv[0], [process.argv[1], "handled_child"], { stdio: ["ignore", process.stdout, process.stderr, "ipc"] });
     child.on("close", (code, signal) => {
@@ -1229,7 +1958,6 @@ function handle_child() {
     child.on("error", () => child.kill());
     child.on("exit", (code, signal) => child.kill());
 }
-
 process.on("uncaughtException", err => {
     console.log("Global exception caught:");
     console.log("Name: " + err.name);
@@ -1305,22 +2033,67 @@ client.on("message", msg => {
                 cmd.stats();
             break;
         }
+        case "basic": {
+            if (enabled_cmd("basic", valid_request("blockcount") || valid_request("mncount1") || valid_request("supply")))
+                cmd.stats1();
+            break;
+        }
+ 
+        case "super": {
+            if (enabled_cmd("super", valid_request("blockcount") || valid_request("mncount2") || valid_request("supply")))
+                cmd.stats2();
+            break;
+        }
+
+        case "bamf": {
+            if (enabled_cmd("bamf", valid_request("blockcount") || valid_request("mncount3") || valid_request("supply")))
+                cmd.stats3();
+            break;
+        }
+
         case "stages": {
             if (enabled_cmd("stages", valid_request("blockcount")))
                 cmd.stages();
             break;
         }
-        case "earnings": {
+/*        case "earnings": {
             if (enabled_cmd("earnings", valid_request("blockcount") && valid_request("mncount")))
                 cmd.earnings(args[1]);
             break;
         }
+*/        
+        case "earnings": {
+            if (enabled_cmd("earnings", valid_request("blockcount") && valid_request("mncount1")&& valid_request("mncount2") && valid_request("mncount3")))
+                cmd.earnings(args[1] ,args[2] , args[3] );
+            break;
+        }         
+
+        case "earningsbasic": {
+            if (enabled_cmd("earningsbasic", valid_request("blockcount") && valid_request("mncount1")))
+                cmd.earnings1(args[1]);
+            break;
+        }
+        case "earningssuper": {
+            if (enabled_cmd("earningssuper", valid_request("blockcount") && valid_request("mncount2")))
+                cmd.earnings2(args[1]);
+            break;
+        }
+        case "earningsbamf": {
+            if (enabled_cmd("earningsbamf", valid_request("blockcount") && valid_request("mncount3")))
+                cmd.earnings3(args[1]);
+            break;
+        }           
+
         case "mining": {
             if (enabled_cmd("mining", valid_request("blockcount") && valid_request("hashrate")) && !error_noparam(1, "You need to provide amount of hashrate"))
                 cmd.mining(args[1], args[2]);
             break;
         }
-
+        case "addnodes": {
+            if (enabled_cmd("addnodes", valid_request("addnodes")))
+                cmd.addnodes();
+            break;
+        }
         // Explorer:
 
         case "balance": {
@@ -1365,6 +2138,8 @@ client.on("message", msg => {
         // User masternodes:
 
         case "my-masternode-add": {
+            
+          
             if (enabled_cmd("my-masternode-add", conf.useraddrs || valid_request("mnstat") || valid_request("blockcount") || valid_request("mncount")) && !error_noparam(1, "You need to provide at least one address"))
                 cmd.my_masternode_add(args.slice(1));
             break;
@@ -1395,22 +2170,22 @@ client.on("message", msg => {
             cmd.about();
             break;
         }
-        case "meaning-of-life": { // easter egg
+        case "whattomine": { // easter egg
             msg.channel.send({
                 embed: {
-                    title: "Answer to life, the universe and everything",
+                    title: "**Any Coin that is POW**",
                     color: conf.color.other,
-                    description: "42"
+                    description: "and Profitable"
                 }
             });
             break;
         }
-        case "price-go-to-the-moon": { // easter egg
+        case "POW": { // easter egg
             msg.channel.send({
                 embed: {
                     title: "**Price Ticker**",
                     color: conf.color.prices,
-                    description: "**All Exchanges: ** One jillion satoshis"
+                    description: "**All Exchanges: ** One jillion satoshis - or did you mean this coin - than type **%price**"
                 }
             });
             break;
@@ -1442,4 +2217,5 @@ else if (process.argv.length >= 3 && process.argv[2] === "handled_child")
     });
 else
     handle_child();
+
 
